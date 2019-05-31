@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/tls"
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -41,11 +40,11 @@ type loginResponse struct {
 }
 
 func Ping(host string) error {
-	ping, err := buildURL(host, PingPath)
+	pingURL, err := buildURL(host, PingPath)
 	if err != nil {
 		return err
 	}
-	resp, err := HttpClient.Get(ping)
+	resp, err := HttpClient.Get(pingURL)
 	if err != nil {
 		return err
 	}
@@ -56,7 +55,7 @@ func Ping(host string) error {
 }
 
 func Login(host string, creds *LoginCredentials) (token string, err error) {
-	login, err := buildURL(host, LoginPath)
+	loginURL, err := buildURL(host, LoginPath)
 	if err != nil {
 		return
 	}
@@ -64,7 +63,7 @@ func Login(host string, creds *LoginCredentials) (token string, err error) {
 	if err != nil {
 		return
 	}
-	resp, err := HttpClient.Post(login, "application/json", bytes.NewBuffer(body))
+	resp, err := HttpClient.Post(loginURL, "application/json", bytes.NewBuffer(body))
 	if err != nil {
 		return
 	}
@@ -87,7 +86,7 @@ func Login(host string, creds *LoginCredentials) (token string, err error) {
 }
 
 func ChangePassword(host, token string, input *ChangePasswordInput) error {
-	cp, err := url.Parse(fmt.Sprintf("https://%s/v3/users?action=changepassword", host))
+	cpURL, err := buildURL(host, ChangePasswordPath)
 	if err != nil {
 		return err
 	}
@@ -95,7 +94,7 @@ func ChangePassword(host, token string, input *ChangePasswordInput) error {
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequest("POST", cp.String(), bytes.NewBuffer(body))
+	req, err := http.NewRequest("POST", cpURL, bytes.NewBuffer(body))
 	if err != nil {
 		return err
 	}
@@ -106,11 +105,10 @@ func ChangePassword(host, token string, input *ChangePasswordInput) error {
 
 	resp, err := HttpClient.Do(req)
 	if err != nil {
-		return errors.Wrap(err, "rancher password change request failed")
+		return err
 	}
 	if resp.StatusCode != http.StatusOK {
-		body, _ := ioutil.ReadAll(resp.Body)
-		return errors.Errorf("rancher password change returned unexpected status (%d): %v", resp.StatusCode, string(body))
+		return responseErr(resp)
 	}
 	return nil
 }

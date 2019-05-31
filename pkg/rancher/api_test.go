@@ -19,6 +19,7 @@ func TestPing(t *testing.T) {
 		{
 			"success",
 			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, http.MethodGet, r.Method)
 				assert.Equal(t, "/ping", r.URL.Path)
 			}),
 			false,
@@ -64,11 +65,15 @@ func TestLogin(t *testing.T) {
 
 	t.Run("success", func(t *testing.T) {
 		ts.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			body, _ := ioutil.ReadAll(r.Body)
-			assert.JSONEq(t, `{"username": "asl", "password": "plz"}`, string(body))
+			assert.Equal(t, http.MethodPost, r.Method)
+
 			assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
+
 			assert.Equal(t, "/v3-public/localProviders/local", r.URL.Path)
 			assert.Equal(t, "action=login", r.URL.RawQuery)
+
+			body, _ := ioutil.ReadAll(r.Body)
+			assert.JSONEq(t, `{"username": "asl", "password": "plz"}`, string(body))
 
 			w.WriteHeader(http.StatusCreated)
 			w.Write(validResponse)
@@ -121,7 +126,49 @@ func TestLogin(t *testing.T) {
 }
 
 func TestChangePassword(t *testing.T) {
-	t.Skip("write a test")
+	ts, host := newTestServer()
+	defer ts.Close()
+
+	token := "black"
+	input := &ChangePasswordInput{
+		CurrentPassword: "very-unique",
+		NewPassword:     "very-unique1",
+	}
+
+	t.Run("success", func(t *testing.T) {
+		ts.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			assert.Equal(t, http.MethodPost, r.Method)
+
+			assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
+			assert.Equal(t, "Bearer black", r.Header.Get("Authorization"))
+
+			assert.Equal(t, "/v3/users", r.URL.Path)
+			assert.Equal(t, "action=changepassword", r.URL.RawQuery)
+
+			body, _ := ioutil.ReadAll(r.Body)
+			assert.JSONEq(t, `{"currentPassword": "very-unique", "newPassword": "very-unique1"}`, string(body))
+
+			w.WriteHeader(http.StatusOK)
+		})
+
+		assert.NoError(t, ChangePassword(host, token, input))
+	})
+
+	t.Run("server_error", func(t *testing.T) {
+		ts.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		})
+
+		assert.Error(t, ChangePassword(host, token, input))
+	})
+
+	t.Run("bad_status", func(t *testing.T) {
+		ts.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		})
+
+		assert.Error(t, ChangePassword(host, token, input))
+	})
 }
 
 func newTestServer() (*httptest.Server, string) {

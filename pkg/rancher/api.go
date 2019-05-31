@@ -12,7 +12,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-var httpClient = http.Client{
+var HttpClient = http.Client{
 	Transport: &http.Transport{
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: true,
@@ -20,9 +20,15 @@ var httpClient = http.Client{
 	},
 }
 
+const (
+	PingPath           = "/ping"
+	LoginPath          = "/v3-public/localProviders/local?action=login"
+	ChangePasswordPath = "/v3/users?action=changepassword"
+)
+
 type LoginCredentials struct {
-	Username string
-	Password string
+	Username string `json:"username"`
+	Password string `json:"password"`
 }
 
 type ChangePasswordInput struct {
@@ -35,23 +41,22 @@ type loginResponse struct {
 }
 
 func Ping(host string) error {
-	pingURL, err := url.Parse(fmt.Sprintf("https://%s/ping", host))
+	ping, err := buildURL(host, PingPath)
 	if err != nil {
 		return err
 	}
-
-	resp, err := httpClient.Get(pingURL.String())
+	resp, err := HttpClient.Get(ping)
 	if err != nil {
 		return err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return errors.Errorf("rancher ping failed with status (%d)", resp.StatusCode)
+		return responseErr(resp)
 	}
 	return nil
 }
 
 func Login(host string, creds *LoginCredentials) (token string, err error) {
-	loginURL, err := url.Parse(fmt.Sprintf("https://%s/v3-public/localProviders/local?action=login", host))
+	login, err := buildURL(host, LoginPath)
 	if err != nil {
 		return
 	}
@@ -59,7 +64,7 @@ func Login(host string, creds *LoginCredentials) (token string, err error) {
 	if err != nil {
 		return
 	}
-	resp, err := httpClient.Post(loginURL.String(), "application/json", bytes.NewBuffer(body))
+	resp, err := HttpClient.Post(login, "application/json", bytes.NewBuffer(body))
 	if err != nil {
 		return
 	}
@@ -67,24 +72,22 @@ func Login(host string, creds *LoginCredentials) (token string, err error) {
 
 	switch {
 	case resp.StatusCode == http.StatusUnauthorized:
-		body, _ := ioutil.ReadAll(resp.Body)
-		err = &authError{string(body)}
+		err = newAuthError(resp)
+		return
 	case resp.StatusCode != http.StatusCreated:
-		err = errors.Errorf("rancher login failed with status (%d)", resp.StatusCode)
-	}
-	if err != nil {
+		err = responseErr(resp)
 		return
 	}
 
-	loginData := new(loginResponse)
-	if err = json.NewDecoder(resp.Body).Decode(loginData); err != nil {
-		return "", errors.Wrap(err, "unexpected rancher response")
+	response := new(loginResponse)
+	if err = json.NewDecoder(resp.Body).Decode(response); err != nil {
+		return "", errors.Wrap(err, "malformed rancher response")
 	}
-	return loginData.Token, nil
+	return response.Token, nil
 }
 
 func ChangePassword(host, token string, input *ChangePasswordInput) error {
-	cpURL, err := url.Parse(fmt.Sprintf("https://%s/v3/users?action=changepassword", host))
+	cp, err := url.Parse(fmt.Sprintf("https://%s/v3/users?action=changepassword", host))
 	if err != nil {
 		return err
 	}
@@ -92,7 +95,7 @@ func ChangePassword(host, token string, input *ChangePasswordInput) error {
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequest("POST", cpURL.String(), bytes.NewBuffer(body))
+	req, err := http.NewRequest("POST", cp.String(), bytes.NewBuffer(body))
 	if err != nil {
 		return err
 	}
@@ -101,7 +104,7 @@ func ChangePassword(host, token string, input *ChangePasswordInput) error {
 	req.Header.Set("Authorization", bearer)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := httpClient.Do(req)
+	resp, err := HttpClient.Do(req)
 	if err != nil {
 		return errors.Wrap(err, "rancher password change request failed")
 	}
@@ -110,4 +113,20 @@ func ChangePassword(host, token string, input *ChangePasswordInput) error {
 		return errors.Errorf("rancher password change returned unexpected status (%d): %v", resp.StatusCode, string(body))
 	}
 	return nil
+}
+
+func buildURL(host, path string) (string, error) {
+	u, err := url.ParseRequestURI("https://" + host + path)
+	if err != nil {
+		return "", errors.Wrap(err, "cannot build rancher url")
+	}
+	return u.String(), nil
+}
+
+func responseErr(resp *http.Response) error {
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	return errors.Errorf("rancher request failed [status: %d] [body: %v]", resp.StatusCode, string(body))
 }

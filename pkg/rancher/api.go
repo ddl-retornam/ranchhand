@@ -11,7 +11,9 @@ import (
 	"github.com/pkg/errors"
 )
 
-var HttpClient = http.Client{
+// HTTPClient is the default client used to communicate with the Rancher API. By default, it has TLS verification
+// disabled. You can modify the variable with you own client to modify the behavior of the underlying http calls.
+var HTTPClient = http.Client{
 	Transport: &http.Transport{
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: true,
@@ -20,31 +22,37 @@ var HttpClient = http.Client{
 }
 
 const (
-	PingPath           = "/ping"
-	LoginPath          = "/v3-public/localProviders/local?action=login"
-	ChangePasswordPath = "/v3/users?action=changepassword"
+	pingPath           = "/ping"
+	loginPath          = "/v3-public/localProviders/local?action=login"
+	changePasswordPath = "/v3/users?action=changepassword"
 )
 
-type LoginCredentials struct {
+// LoginInput defines the credentials required to authenticate with the Rancher API.
+type LoginInput struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 }
 
+// ChangePasswordInput defines the data required to change a user's password.
 type ChangePasswordInput struct {
 	CurrentPassword string `json:"currentPassword"`
 	NewPassword     string `json:"newPassword"`
 }
 
+// loginResponse maps a portion of the JSON response from a successful login request. Add more fields to the struct if
+// you require additional data from the body of the response.
 type loginResponse struct {
 	Token string
 }
 
+// Ping is used to verify that a Rancher instance is running and healthy. Any response status other than 200 will result
+// in an error.
 func Ping(host string) error {
-	pingURL, err := buildURL(host, PingPath)
+	pingURL, err := buildURL(host, pingPath)
 	if err != nil {
 		return err
 	}
-	resp, err := HttpClient.Get(pingURL)
+	resp, err := HTTPClient.Get(pingURL)
 	if err != nil {
 		return err
 	}
@@ -54,8 +62,10 @@ func Ping(host string) error {
 	return nil
 }
 
-func Login(host string, creds *LoginCredentials) (token string, err error) {
-	loginURL, err := buildURL(host, LoginPath)
+// Login will use the provided credentials to request an API token from Rancher. This API token is required to make any
+// request that requires authentication.
+func Login(host string, creds *LoginInput) (token string, err error) {
+	loginURL, err := buildURL(host, loginPath)
 	if err != nil {
 		return
 	}
@@ -63,7 +73,7 @@ func Login(host string, creds *LoginCredentials) (token string, err error) {
 	if err != nil {
 		return
 	}
-	resp, err := HttpClient.Post(loginURL, "application/json", bytes.NewBuffer(body))
+	resp, err := HTTPClient.Post(loginURL, "application/json", bytes.NewBuffer(body))
 	if err != nil {
 		return
 	}
@@ -85,8 +95,10 @@ func Login(host string, creds *LoginCredentials) (token string, err error) {
 	return response.Token, nil
 }
 
+// ChangePassword will update the password of the user associated with the provided API token. Any response status other
+// than 200 will result in an error.
 func ChangePassword(host, token string, input *ChangePasswordInput) error {
-	cpURL, err := buildURL(host, ChangePasswordPath)
+	cpURL, err := buildURL(host, changePasswordPath)
 	if err != nil {
 		return err
 	}
@@ -103,7 +115,7 @@ func ChangePassword(host, token string, input *ChangePasswordInput) error {
 	req.Header.Set("Authorization", bearer)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := HttpClient.Do(req)
+	resp, err := HTTPClient.Do(req)
 	if err != nil {
 		return err
 	}

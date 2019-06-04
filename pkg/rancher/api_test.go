@@ -58,7 +58,7 @@ func TestLogin(t *testing.T) {
 	defer ts.Close()
 
 	validResponse := []byte(`{"token": "black"}`)
-	creds := LoginCredentials{
+	creds := LoginInput{
 		Username: "asl",
 		Password: "plz",
 	}

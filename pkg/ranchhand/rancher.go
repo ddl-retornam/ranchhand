@@ -50,7 +50,7 @@ var (
 		},
 	}
 
-	rancherDefaultCredentials = rancher.LoginCredentials{
+	rancherDefaultCredentials = rancher.LoginInput{
 		Username: "admin",
 		Password: "admin",
 	}
